@@ -1,0 +1,17 @@
+[
+{
+  "directory": "C:/Users/luiza/Documents/2023.1/ArquiteturaSO/Trabalho T/build",
+  "command": "C:\\msys64\\mingw64\\bin\\g++.exe -g -std=gnu++17 -o CMakeFiles\\main.dir\\main.cpp.obj -c \"C:\\Users\\luiza\\Documents\\2023.1\\ArquiteturaSO\\Trabalho T\\main.cpp\"",
+  "file": "C:\\Users\\luiza\\Documents\\2023.1\\ArquiteturaSO\\Trabalho T\\main.cpp"
+},
+{
+  "directory": "C:/Users/luiza/Documents/2023.1/ArquiteturaSO/Trabalho T/build",
+  "command": "C:\\msys64\\mingw64\\bin\\g++.exe -g -std=gnu++17 -o CMakeFiles\\main.dir\\fs.cpp.obj -c \"C:\\Users\\luiza\\Documents\\2023.1\\ArquiteturaSO\\Trabalho T\\fs.cpp\"",
+  "file": "C:\\Users\\luiza\\Documents\\2023.1\\ArquiteturaSO\\Trabalho T\\fs.cpp"
+},
+{
+  "directory": "C:/Users/luiza/Documents/2023.1/ArquiteturaSO/Trabalho T/build",
+  "command": "C:\\msys64\\mingw64\\bin\\g++.exe -g -std=gnu++17 -o CMakeFiles\\main.dir\\sha256.cpp.obj -c \"C:\\Users\\luiza\\Documents\\2023.1\\ArquiteturaSO\\Trabalho T\\sha256.cpp\"",
+  "file": "C:\\Users\\luiza\\Documents\\2023.1\\ArquiteturaSO\\Trabalho T\\sha256.cpp"
+}
+]
