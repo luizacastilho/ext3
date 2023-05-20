@@ -4,6 +4,7 @@
 #include <vector>
 #include <stdio.h>
 #include <string.h>
+#include <bitset>
 using namespace std;
 
 /**
@@ -114,27 +115,42 @@ void addFile(std::string fsFileName, std::string filePath, std::string fileConte
 
         if (blockVector[i] == 0)
         {
-            freeBlocks[j] = i;
+            freeBlocks[j] = i - 1;
             j++;
         }
     }
 
     int usedBlocks = 0; // att valor do bitMap
-    for (int i = 0; i < numBlocks; i++)
+
+    char blocksUsed[FirstFreeInode];
+    for (int i = 1; i <= FirstFreeInode; i++)
     {
-        if (inodeAux[i].IS_USED == 1)
+        fseek(file, 3 + bitMapSize + sizeof(INODE) * i - 10, SEEK_SET);
+        fread(&blocksUsed[i - 1], sizeof(unsigned char), FirstFreeInode, file);
+    }
+
+    for (int i = 0; i < FirstFreeInode; i++)
+    {
+        if (blocksUsed[i] <= 2)
         {
-            usedBlocks = +1;
+            usedBlocks += 1;
+        }
+        if (blocksUsed[i] > 2 && blocksUsed[i] <= 4)
+        {
+            usedBlocks += 2;
         }
     }
 
-    usedBlocks = usedBlocks + fileBlocks;
+    int newUsedBlocks = usedBlocks + fileBlocks;
 
-    for (int i = 0; i < usedBlocks; i++)
+    for (int i = 0; i < newUsedBlocks; i++)
     {
         int blockindex = i / 8;
         bitMap[blockindex] |= (1 << i);
     }
+    // att o bitMap com os blocos utilizados
+    fseek(file, 3, SEEK_SET);
+    fwrite(&bitMap, sizeof(unsigned char), bitMapSize, file);
 
     // ir ao inode livre
     unsigned char is_dir = 0, is_used = 1, size = fileContent.size();
@@ -163,6 +179,10 @@ void addFile(std::string fsFileName, std::string filePath, std::string fileConte
     fwrite(&sizeFile, sizeof(unsigned char), 1, file);
     for (int i = 0; i < fileBlocks; i++)
     {
+        if (freeBlocks[i] < 2)
+        {
+            freeBlocks[i] += 1;
+        }
         fwrite(&freeBlocks[i], sizeof(char), 1, file);
     }
 
@@ -182,7 +202,7 @@ void addFile(std::string fsFileName, std::string filePath, std::string fileConte
                 fseek(file, -1, SEEK_CUR);
                 fatherSize = +1;
                 fwrite(&fatherSize, sizeof(unsigned char), 1, file);
-                fseek(file, 3 + bitMapSize + (numInodes - 1) * sizeof(INODE) + 1 + blockSize * inodeAux[i].DIRECT_BLOCKS[0], SEEK_SET);
+                fseek(file, 3 + bitMapSize + (numInodes) * sizeof(INODE) + 7, SEEK_SET);
                 fwrite(&FirstFreeInode, sizeof(char), 1, file);
                 fseek(file, (3 + bitMapSize + i * sizeof(INODE) + sizeof(INODE)), SEEK_SET);
             }
@@ -190,6 +210,7 @@ void addFile(std::string fsFileName, std::string filePath, std::string fileConte
     }
     else
     {
+
         fseek(file, 3 + bitMapSize + 12, SEEK_SET);
         unsigned char fatherSize;
         fread(&fatherSize, sizeof(unsigned char), 1, file);
@@ -205,12 +226,8 @@ void addFile(std::string fsFileName, std::string filePath, std::string fileConte
     // Atribua o conteúdo do arquivo aos blocos encontrados
     char content[sizeof(fileContent)];
     strcpy(content, fileContent.c_str());
-    fseek(file, 1 - (16 - freeBlocks[0]), SEEK_END);
+    fseek(file, 3 + bitMapSize + numInodes * sizeof(INODE) + usedBlocks * 2 + 1, SEEK_SET);
     fwrite(&content, sizeof(char), strlen(fileContent.c_str()), file);
-
-    // att o bitMap com os blocos utilizados
-    fseek(file, 3, SEEK_SET);
-    fwrite(&bitMap, sizeof(unsigned char), bitMapSize, file);
 
     fclose(file);
 }
@@ -358,7 +375,7 @@ void addDir(std::string fsFileName, std::string dirPath)
 
     // Atribua o conteúdo do arquivo aos blocos encontrados
     char content[] = {0};
-    fseek(file, 1 - (16 - 2*freeBlocks[0]), SEEK_END);
+    fseek(file, 1 - (16 - 2 * freeBlocks[0]), SEEK_END);
     fwrite(&content, sizeof(char), sizeof(content), file);
 
     fclose(file);
@@ -371,12 +388,158 @@ void addDir(std::string fsFileName, std::string dirPath)
  */
 void remove(std::string fsFileName, std::string path)
 {
-    // Encontre o índice de um inode F livre conforme este slide
-    // Encontre os índices dos blocos livres necessários para armazenar o conteúdo do arquivo/diretório conforme este slide
-    // Atribua o conteúdo do arquivo/diretório aos blocos encontrados
-    // Defina os membros de F (IS_DIR, IS_USED, NAME, SIZE, índices dos blocos encontrados, etc)
-    // Incremente SIZE do pai de F
-    // Atribua o índice de F no primeiro byte livre dos blocos do pai de F (na falta de byte livre, aloque um novo bloco ao pai)
+    FILE *file = fopen(fsFileName.c_str(), "rb+");
+    // inicializacao de variaveis
+    unsigned char blockSize, numBlocks, numInodes;
+    fseek(file, 0, SEEK_SET);
+    fread(&blockSize, sizeof(unsigned char), 1, file);
+    fread(&numBlocks, sizeof(unsigned char), 1, file);
+    fread(&numInodes, sizeof(unsigned char), 1, file);
+    unsigned char bitMapSize = (int)ceil(numBlocks / 8.0);
+    fseek(file, bitMapSize + 3, SEEK_SET);
+    unsigned char bitMap[bitMapSize];
+    fseek(file, 3, SEEK_SET);
+    fread(&bitMap, sizeof(unsigned char), bitMapSize, file);
+    // Atribua 0x0 a todos os campos do inode F
+    // descobrir nome do diretorio e nome do arquivo
+    char nameDir[10], fileName[10];
+    int lastIndex = path.find_last_of('/');
+    if (lastIndex == 0)
+    {
+        strcpy(nameDir, "/");
+        strcpy(fileName, path.substr(1, path.length()).c_str());
+    }
+    else
+    {
+        strcpy(nameDir, path.substr(1, lastIndex - 1).c_str());
+        strcpy(fileName, path.substr(lastIndex + 1, path.length()).c_str());
+        for (int i = (int(path.length()) - lastIndex - 1); i < 10; i++)
+        {
+            fileName[i] = 0;
+        }
+    }
+    // achar inode referente ao arquivo
+    char nomeInode[10];
+    unsigned char inodeNumber = 0;
+    for (int i = 0; i < numInodes; i++)
+    {
+        fseek(file, 3 + bitMapSize + i * sizeof(INODE) + 2, SEEK_SET);
+        fread(&nomeInode, sizeof(unsigned char), 10, file);
+        if (strcmp(nomeInode, fileName) == 0)
+        {
+            inodeNumber = i;
+            break;
+        }
+    }
+    // escrever tudo 0
+    fseek(file, 3 + bitMapSize + (inodeNumber) * sizeof(INODE), SEEK_SET);
+    unsigned char zero = 0x00;
+    for (int i = 0; i < sizeof(INODE); i++)
+    {
+        fwrite(&zero, sizeof(unsigned char), 1, file);
+    }
+
+    // Não altere os blocos de F.
+    // Modifique o pai P de F da seguinte forma:
+    // achar pai P de F
+    char nomePai[10];
+    unsigned char fatherNumber = 0;
+    for (int i = 0; i < numInodes; i++)
+    {
+        fseek(file, 3 + bitMapSize + i * sizeof(INODE) + 2, SEEK_SET);
+        fread(&nomePai, sizeof(unsigned char), 10, file);
+        if (strcmp(nomePai, nameDir) == 0)
+        {
+            fatherNumber = i;
+            break;
+        }
+    }
+
+    // Seja B a lista de filhos de P armazenado na região de blocos.
+    // achar qual bloco no vetor de blocos P ocupa
+    char sizeofInodes[fatherNumber];
+    for (int i = 0; i <= fatherNumber; i++)
+    {
+        fseek(file, 3 + bitMapSize + i * sizeof(INODE) + 12, SEEK_SET);
+        fread(&sizeofInodes[i], sizeof(char), 1, file);
+    }
+    int startBlock = 0;
+    for (int i = 0; i < inodeNumber; i++)
+    {
+        if (sizeofInodes[i] <= 2)
+        {
+            startBlock += 2;
+        }
+        else if (sizeofInodes[i] > 2)
+        {
+            startBlock += 4;
+        }
+    }
+    char fatherSizeBlock;
+    if (sizeofInodes[fatherNumber] <= 2)
+    {
+        fatherSizeBlock = 2;
+    }
+    if (sizeofInodes[fatherNumber] > 2)
+    {
+        fatherSizeBlock = 4;
+    }
+
+    char listB[fatherSizeBlock];
+    if (nameDir[0] != '/')
+    {
+        fseek(file, -(16 - startBlock), SEEK_END);
+        fread(&listB, sizeof(char), fatherSizeBlock, file);
+    }
+    else
+    {
+        fseek(file, -16, SEEK_END);
+        fread(&listB, sizeof(char), fatherSizeBlock, file);
+    }
+
+    // Se B[k] = F e 0 ≤ k < P.SIZE -1 (ou seja, F não é o último filho de P), faça B[j] = B[j+1] para j=k, k+1, …, P.SIZE - 2 (copie da esq para direita)
+    for (int i = 0; i < fatherSizeBlock; i++)
+    {
+        if (listB[fatherSizeBlock - 1] == inodeNumber)
+        {
+            listB[fatherSizeBlock - 1] = 0;
+        }
+    }
+    if (nameDir[0] != '/')
+    {
+        fseek(file, -(16 - startBlock), SEEK_END);
+    }
+    else
+    {
+        fseek(file, -16, SEEK_END);
+    }
+    //fwrite(&listB, sizeof(char), fatherSizeBlock, file);
+    // Decremente P.SIZE
+    char newFatherSize = sizeofInodes[fatherNumber] - 1;
+    fseek(file, 3 + bitMapSize + fatherNumber * sizeof(INODE) + 12, SEEK_SET);
+    fwrite(&newFatherSize, sizeof(char), 1, file);
+
+    // Se um bloco foi desocupado, marque-o como livre no mapa de bits
+    int newUsedBlocks;
+    if (nameDir[0] != '/')
+    {
+        newUsedBlocks = startBlock / 2;
+    }
+    else
+    {
+        newUsedBlocks = startBlock / 2;
+    }
+
+    unsigned char newBitMap[bitMapSize];
+    for (int i = 0; i < newUsedBlocks; i++)
+    {
+        int blockindex = i / 8;
+        newBitMap[blockindex] |= (1 << i);
+    }
+    fseek(file, 3, SEEK_SET);
+    fwrite(&newBitMap, sizeof(unsigned char), 1, file);
+
+    fclose(file);
 }
 
 /**
@@ -385,6 +548,4 @@ void remove(std::string fsFileName, std::string path)
  * @param oldPath caminho completo do arquivo ou diretório a ser movido.
  * @param newPath novo caminho completo do arquivo ou diretório.
  */
-void move(std::string fsFileName, std::string oldPath, std::string newPath)
-{
-}
+void move(std::string fsFileName, std::string oldPath, std::string newPath) {}
